@@ -29,14 +29,33 @@
 #include <sstream>
 #include <cstring>
 
-#include <EGL/eglext.h>
-
-#ifndef EGL_EXT_platform_base
-typedef EGLDisplay (EGLAPIENTRYP PFNEGLGETPLATFORMDISPLAYEXTPROC) (EGLenum platform, void *native_display, const EGLint *attrib_list);
-#endif
+#ifndef EGL_ANGLE_platform_angle
+#define EGL_PLATFORM_ANGLE_ANGLE 0x3202
+#endif /* EGL_ANGLE_platform_angle */
 
 using std::vector;
 using std::string;
+
+#ifdef _WIN32
+void *get_egl_library()
+{
+    return LoadLibraryA("libEGL.dll");
+}
+
+void close_library(void *library)
+{
+    if (library)
+    {
+        FreeLibrary(reinterpret_cast<HMODULE>(library));
+    }
+}
+
+GLADapiproc load_egl_func(const char *name, void *userptr)
+{
+    HMODULE egl_library = reinterpret_cast<HMODULE>(userptr);
+    return reinterpret_cast<GLADapiproc>(GetProcAddress(egl_library, name));
+}
+#endif
 
 /****************************
  * EGLConfig public methods *
@@ -303,11 +322,19 @@ GLStateEGL::~GLStateEGL()
 
     if(!eglReleaseThread())
        Log::error("eglReleaseThread failed\n");
+
+    close_library(egl_library_);
 }
 
 bool
 GLStateEGL::init_display(void* native_display, GLVisualConfig& visual_config)
 {
+    egl_library_ = get_egl_library();
+    if (gladLoadEGLUserPtr(EGL_NO_DISPLAY, load_egl_func, egl_library_) == 0) {
+        Log::error("Loading EGL entry points failed\n");
+        return false;
+    }
+    
     native_display_ = reinterpret_cast<EGLNativeDisplayType>(native_display);
     requested_visual_config_ = visual_config;
 
@@ -326,11 +353,11 @@ void
 GLStateEGL::init_gl_extensions()
 {
 #if GLMARK2_USE_GLESv2
+    gladLoadGLES2(eglGetProcAddress);
+
     if (GLExtensions::support("GL_OES_mapbuffer")) {
-        GLExtensions::MapBuffer =
-            reinterpret_cast<PFNGLMAPBUFFEROESPROC>(eglGetProcAddress("glMapBufferOES"));
-        GLExtensions::UnmapBuffer =
-            reinterpret_cast<PFNGLUNMAPBUFFEROESPROC>(eglGetProcAddress("glUnmapBufferOES"));
+        GLExtensions::MapBuffer = glMapBufferOES;
+        GLExtensions::UnmapBuffer = glUnmapBufferOES;
     }
 #elif GLMARK2_USE_GL
     GLExtensions::MapBuffer = glMapBuffer;
@@ -437,6 +464,8 @@ GLStateEGL::getVisualConfig(GLVisualConfig& vc)
 #define GLMARK2_NATIVE_EGL_DISPLAY_ENUM EGL_PLATFORM_MIR_KHR
 #elif  GLMARK2_USE_DISPMANX
 #define GLMARK2_NATIVE_EGL_DISPLAY_ENUM 0
+#elif  GLMARK2_USE_ANGLE
+#define GLMARK2_NATIVE_EGL_DISPLAY_ENUM EGL_PLATFORM_ANGLE_ANGLE
 #endif
 
 bool
@@ -483,11 +512,18 @@ GLStateEGL::gotValidDisplay()
         Log::error("eglGetDisplay() failed with error: 0x%x\n", eglGetError());
         return false;
     }
+
     int egl_major(-1);
     int egl_minor(-1);
     if (!eglInitialize(egl_display_, &egl_major, &egl_minor)) {
         Log::error("eglInitialize() failed with error: 0x%x\n", eglGetError());
         egl_display_ = 0;
+        return false;
+    }
+
+    /* Reinitialize GLAD with a known display */
+    if (gladLoadEGLUserPtr(egl_display_, load_egl_func, egl_library_) == 0) {
+        Log::error("Loading EGL entry points failed\n");
         return false;
     }
 

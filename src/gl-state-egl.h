@@ -23,7 +23,7 @@
 #define GLMARK2_GL_STATE_EGL_H_
 
 #include <vector>
-#include <EGL/egl.h>
+#include <glad/egl.h>
 #include "gl-state.h"
 #include "gl-visual-config.h"
 
@@ -124,6 +124,7 @@ class GLStateEGL : public GLState
     EGLSurface egl_surface_;
     GLVisualConfig requested_visual_config_;
     EglConfig best_config_;
+    void *egl_library_;
     bool gotValidDisplay();
     bool gotValidConfig();
     bool gotValidSurface();
@@ -137,7 +138,8 @@ public:
         egl_display_(0),
         egl_config_(0),
         egl_context_(0),
-        egl_surface_(0) {}
+        egl_surface_(0),
+        egl_library_(0) {}
     ~GLStateEGL();
 
     bool init_display(void* native_display, GLVisualConfig& config_pref);
