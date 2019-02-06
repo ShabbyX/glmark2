@@ -55,6 +55,29 @@ GLADapiproc load_egl_func(const char *name, void *userptr)
     HMODULE egl_library = reinterpret_cast<HMODULE>(userptr);
     return reinterpret_cast<GLADapiproc>(GetProcAddress(egl_library, name));
 }
+#else
+
+#include <dlfcn.h>
+
+void *get_egl_library()
+{
+    // Use nodelete so the symbols remain after closing.  Useful for tools that lookup symbols
+    // after program terminates, such as some valgrind tools.
+    return dlopen("libEGL.so", RTLD_NOW | RTLD_NODELETE);
+}
+
+void close_library(void *library)
+{
+    if (library)
+    {
+        dlclose(library);
+    }
+}
+
+GLADapiproc load_egl_func(const char *name, void *egl_library)
+{
+    return reinterpret_cast<GLADapiproc>(dlsym(egl_library, name));
+}
 #endif
 
 /****************************
